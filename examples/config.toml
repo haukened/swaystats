@@ -1,0 +1,35 @@
+###############################################
+# swaystats example configuration (full list) #
+###############################################
+
+# Global tick rate (status emission base cadence). Range: 1..20. Default: 1
+tick_hz = 1
+
+# swaybar modules render Left -> Right.
+
+[modules.cpu]
+enabled = true
+interval_sec = 2          # sampling interval (s)
+warn_percent = 70         # warn threshold
+danger_percent = 90       # danger threshold
+precision = 0             # 0 or 1 decimal place
+prefix = "\uf4bc"         # shown before percentage
+
+[modules.mem]
+enabled = true
+interval_sec = 5
+warn_percent = 70
+danger_percent = 90
+precision = 0
+prefix = "\uefc5"
+format = "percent"       # percent | available | used
+
+[modules.time]
+enabled = true
+format = "2006-01-02 15:04:05"
+
+# Notes:
+# - Disable a module by setting enabled = false or deleting the entire table
+# - Omit any field to use its default.
+# - If you reorder these tables, the output bar order changes accordingly.
+# - Unknown modules in the file are ignored.

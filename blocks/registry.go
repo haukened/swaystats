@@ -41,13 +41,15 @@ func BuildProviders(cfg *config.Config) []Provider {
 		providers = append(providers, spec.Build(cfg))
 		seen[name] = struct{}{}
 	}
-	for _, n := range order { // config order first
-		appendIf(n)
-	}
-	for _, n := range regOrder { // then any not yet included
-		if _, ok := seen[n]; !ok {
+	if len(order) > 0 { // explicit config file: only build those listed and enabled
+		for _, n := range order {
 			appendIf(n)
 		}
+		return providers
+	}
+	// No explicit file order (defaults case): use registration order
+	for _, n := range regOrder {
+		appendIf(n)
 	}
 	return providers
 }

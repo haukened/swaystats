@@ -10,9 +10,10 @@ import (
 )
 
 type Config struct {
-	TickHz      int      `toml:"tick_hz"`
-	Modules     Modules  `toml:"modules"`
-	moduleOrder []string // order of module tables as they appeared in TOML
+	TickHz      int                 `toml:"tick_hz"`
+	Modules     Modules             `toml:"modules"`
+	moduleOrder []string            // order of module tables as they appeared in TOML
+	present     map[string]struct{} // modules explicitly present in the file
 }
 
 type Modules struct {
@@ -53,6 +54,8 @@ func Defaults() *Config {
 			CPU:  CPUModule{Enabled: true, IntervalSec: 2, WarnPercent: 70, DangerPercent: 90, Precision: 0, Prefix: "CPU"},
 			Mem:  MemoryModule{Enabled: true, IntervalSec: 5, WarnPercent: 70, DangerPercent: 90, Precision: 0, Prefix: "MEM", Format: "percent"},
 		},
+		// Default order (when no config file): cpu, mem, time (time last on the right end of bar cluster)
+		moduleOrder: []string{"cpu", "mem", "time"},
 	}
 }
 
@@ -83,16 +86,34 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return defaults, fmt.Errorf("parse config: %w", err)
 	}
-	// Capture module order from metadata keys: modules.<name>
+	// If a config file exists, restart moduleOrder so file order fully controls ordering.
+	defaults.moduleOrder = nil
+	// Capture module order + presence from metadata keys: modules.<name>
 	seen := map[string]struct{}{}
+	present := map[string]struct{}{}
 	for _, k := range md.Keys() {
 		if len(k) == 2 && k[0] == "modules" {
 			name := k[1]
+			present[name] = struct{}{}
 			if _, ok := seen[name]; !ok {
 				defaults.moduleOrder = append(defaults.moduleOrder, name)
 				seen[name] = struct{}{}
 			}
 		}
+	}
+	defaults.present = present
+
+	// Implicit disable: if a module section is omitted in a user file, treat it as disabled.
+	// (Do not do this when no config file: earlier return already handled.)
+	// Only disable if not explicitly present.
+	if _, ok := present["time"]; !ok {
+		defaults.Modules.Time.Enabled = false
+	}
+	if _, ok := present["cpu"]; !ok {
+		defaults.Modules.CPU.Enabled = false
+	}
+	if _, ok := present["mem"]; !ok {
+		defaults.Modules.Mem.Enabled = false
 	}
 	defaults.normalize()
 	return defaults, nil

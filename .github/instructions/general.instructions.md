@@ -160,6 +160,7 @@ Blocks should follow good software architecture patterns, CLEAN / Hexagonal / Po
   - modules to enable/disable
   - module specific settings (e.g., battery thresholds, network interface names, etc...)
 - Should support reloading on SIGHUP
+- When updating any blocks, if your work results in a change to the config, ensure that you update the config package, as well as the example toml file in `./examples/config.toml`
 
 ## Separators & spacing
 Set `Separator:false` on all blocks and a uniform `SeparatorBlockWidth` (e.g., `12`). If you want visual gaps, add a dedicated spacer block with `FullText:" "` and the bar background color.
