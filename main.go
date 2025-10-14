@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"swaystats/blocks"
 	"swaystats/clicks"
 	"swaystats/config"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func main() {
@@ -20,8 +24,9 @@ func main() {
 		log.Printf("config: %v", err)
 	}
 
-	// Build providers using registry + config order.
-	providers := blocks.BuildProviders(cfg)
+	// Build providers using registry + config order (held atomically for live reloads).
+	var providers atomic.Value // []blocks.Provider
+	providers.Store(blocks.BuildProviders(cfg))
 
 	// i3bar protocol header and opening array.
 	fmt.Println(`{"version":1,"click_events":true}`)
@@ -43,10 +48,25 @@ func main() {
 	waitUntilNextTickInterval(interval, nil)
 
 	// After emitting the initial empty array, every subsequent row must be comma-prefixed per i3bar protocol.
+	// If we have a real config file, start watcher for automatic reloads.
+	if cfg.SourcePath != "" {
+		startConfigWatcher(cfg.SourcePath, func() {
+			newCfg, err := config.Load(cfg.SourcePath)
+			if err != nil {
+				log.Printf("config reload failed: %v", err)
+				return
+			}
+			providers.Store(blocks.BuildProviders(newCfg))
+			cfg = newCfg
+			log.Printf("config reloaded (%s)", cfg.SourcePath)
+		})
+	}
+
 	buf := bytes.NewBuffer(nil)
 	for {
 		drainClicks(clickCh)
-		renderOnce(buf, providers)
+		current := providers.Load().([]blocks.Provider)
+		renderOnce(buf, current)
 		waitUntilNextTickInterval(interval, clickCh)
 	}
 }
@@ -87,6 +107,62 @@ func renderOnce(buf *bytes.Buffer, providers []blocks.Provider) {
 	fmt.Print(",")
 	fmt.Println(string(outBytes))
 }
+
+// startConfigWatcher watches a single file for WRITE/CHMOD events and invokes cb (debounced) on change.
+func startConfigWatcher(path string, cb func()) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("config watcher init: %v", err)
+		return
+	}
+	parent := filepath.Dir(path)
+	if err := watcher.Add(parent); err != nil {
+		log.Printf("config watcher add: %v", err)
+		watcher.Close()
+		return
+	}
+	go func() {
+		defer watcher.Close()
+		var pending bool
+		var last time.Time
+		for {
+			select {
+			case ev, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if !eventTargetsFile(ev, path) {
+					continue
+				}
+				// debounce ~150ms
+				if time.Since(last) < 150*time.Millisecond {
+					pending = true
+					continue
+				}
+				last = time.Now()
+				cb()
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("config watcher error: %v", err)
+			}
+			if pending && time.Since(last) >= 150*time.Millisecond {
+				pending = false
+				last = time.Now()
+				cb()
+			}
+		}
+	}()
+}
+
+// eventTargetsFile checks if fsnotify event relates to the target file path.
+func eventTargetsFile(ev fsnotify.Event, target string) bool {
+	return ev.Name == target
+}
+
+// dirName is a small helper (since path/filepath not imported here yet) - import path/filepath instead.
+// dirName helper removed (filepath.Dir used instead)
 
 func handleClick(c clicks.Click) {
 	// Placeholder: just log; future mapping to commands.

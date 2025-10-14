@@ -14,6 +14,7 @@ type Config struct {
 	Modules     Modules             `toml:"modules"`
 	moduleOrder []string            // order of module tables as they appeared in TOML
 	present     map[string]struct{} // modules explicitly present in the file
+	SourcePath  string              // filesystem path the config was loaded from (empty if defaults only)
 }
 
 type Modules struct {
@@ -102,6 +103,7 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	defaults.present = present
+	defaults.SourcePath = chosen
 
 	// Implicit disable: if a module section is omitted in a user file, treat it as disabled.
 	// (Do not do this when no config file: earlier return already handled.)
