@@ -14,6 +14,7 @@ type Config struct {
 type Modules struct {
 	Time TimeModule
 	CPU  CPUModule
+	Mem  MemoryModule
 }
 
 type TimeModule struct {
@@ -30,12 +31,23 @@ type CPUModule struct {
 	Prefix        string // text/icon prefix before percentage (default "CPU")
 }
 
+type MemoryModule struct {
+	Enabled       bool
+	IntervalSec   int    // sampling interval seconds (default 5)
+	WarnPercent   int    // warn threshold (default 70)
+	DangerPercent int    // danger threshold (default 90)
+	Precision     int    // percent decimals (0 or 1) for percent format
+	Prefix        string // text/icon prefix (default "MEM")
+	Format        string // one of: percent, available, used
+}
+
 func Defaults() *Config {
 	return &Config{
 		TickHz: 1,
 		Modules: Modules{
 			Time: TimeModule{Enabled: true, Format: "2006-01-02 15:04:05"},
 			CPU:  CPUModule{Enabled: true, IntervalSec: 2, WarnPercent: 70, DangerPercent: 90, Precision: 0, Prefix: "CPU"},
+			Mem:  MemoryModule{Enabled: true, IntervalSec: 5, WarnPercent: 70, DangerPercent: 90, Precision: 0, Prefix: "MEM", Format: "percent"},
 		},
 	}
 }

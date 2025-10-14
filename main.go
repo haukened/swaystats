@@ -20,13 +20,16 @@ func main() {
 		log.Printf("config: %v", err)
 	}
 
-	// Providers (ordered). Time first, then CPU.
+	// Providers (ordered). Time, CPU, Memory.
 	providers := []blocks.Provider{}
 	if cfg.Modules.Time.Enabled {
 		providers = append(providers, blocks.NewTimeProvider(time.Second, cfg.Modules.Time.Format))
 	}
 	if cfg.Modules.CPU.Enabled {
 		providers = append(providers, blocks.NewCpuProvider(cfg))
+	}
+	if cfg.Modules.Mem.Enabled {
+		providers = append(providers, blocks.NewMemoryProvider(cfg))
 	}
 
 	// i3bar protocol header and opening array.
