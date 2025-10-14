@@ -146,19 +146,6 @@ Each block returns `(Block, error)` and higher-level aggregator handles errors â
 Blocks should follow good software architecture patterns, CLEAN / Hexagonal / Ports
 - Must follow SOLID principles
 
-## Colors / palette
-Define a single palette in `theme` and reuse:
-```go
-const (
-    CNet = "#89b4fa"
-    CCpu = "#a6e3a1"
-    CMem = "#fab387"
-    CBat = "#f9e2af"
-    CTime= "#cdd6f4"
-    CErr = "#ff5555"
-)
-```
-
 ## Config
 - Should be a separate module
 - Should return parsed config when Load() is called
