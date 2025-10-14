@@ -2,43 +2,47 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
-	TickHz  int
-	Modules Modules
+	TickHz      int      `toml:"tick_hz"`
+	Modules     Modules  `toml:"modules"`
+	moduleOrder []string // order of module tables as they appeared in TOML
 }
 
 type Modules struct {
-	Time TimeModule
-	CPU  CPUModule
-	Mem  MemoryModule
+	Time TimeModule   `toml:"time"`
+	CPU  CPUModule    `toml:"cpu"`
+	Mem  MemoryModule `toml:"mem"`
 }
 
 type TimeModule struct {
-	Enabled bool
-	Format  string
+	Enabled bool   `toml:"enabled"`
+	Format  string `toml:"format"`
 }
 
 type CPUModule struct {
-	Enabled       bool
-	IntervalSec   int    // sampling interval seconds (default 2)
-	WarnPercent   int    // warn threshold (default 70)
-	DangerPercent int    // danger threshold (default 90)
-	Precision     int    // decimals (0 or 1)
-	Prefix        string // text/icon prefix before percentage (default "CPU")
+	Enabled       bool   `toml:"enabled"`
+	IntervalSec   int    `toml:"interval_sec"`   // sampling interval seconds (default 2)
+	WarnPercent   int    `toml:"warn_percent"`   // warn threshold (default 70)
+	DangerPercent int    `toml:"danger_percent"` // danger threshold (default 90)
+	Precision     int    `toml:"precision"`      // decimals (0 or 1)
+	Prefix        string `toml:"prefix"`         // text/icon prefix before percentage (default "CPU")
 }
 
 type MemoryModule struct {
-	Enabled       bool
-	IntervalSec   int    // sampling interval seconds (default 5)
-	WarnPercent   int    // warn threshold (default 70)
-	DangerPercent int    // danger threshold (default 90)
-	Precision     int    // percent decimals (0 or 1) for percent format
-	Prefix        string // text/icon prefix (default "MEM")
-	Format        string // one of: percent, available, used
+	Enabled       bool   `toml:"enabled"`
+	IntervalSec   int    `toml:"interval_sec"`   // sampling interval seconds (default 5)
+	WarnPercent   int    `toml:"warn_percent"`   // warn threshold (default 70)
+	DangerPercent int    `toml:"danger_percent"` // danger threshold (default 90)
+	Precision     int    `toml:"precision"`      // percent decimals (0 or 1) for percent format
+	Prefix        string `toml:"prefix"`         // text/icon prefix (default "MEM")
+	Format        string `toml:"format"`         // one of: percent, available, used
 }
 
 func Defaults() *Config {
@@ -52,21 +56,46 @@ func Defaults() *Config {
 	}
 }
 
-// Load loads configuration from explicit path or search paths; currently returns defaults only.
+// Load loads configuration from explicit path or discovered search path.
+// Precedence: provided path (if exists) else first existing search path else defaults.
+// Missing file yields defaults and an error; parse errors also return defaults + error.
 func Load(path string) (*Config, error) {
+	defaults := Defaults()
+	var chosen string
 	if path != "" {
-		if _, statErr := os.Stat(path); statErr == nil {
-			return Defaults(), nil // TODO parse actual file
-		} else {
-			return Defaults(), statErr
+		chosen = path
+	} else {
+		for _, p := range searchPaths() {
+			if _, err := os.Stat(p); err == nil {
+				chosen = p
+				break
+			}
 		}
 	}
-	for _, p := range searchPaths() {
-		if _, err := os.Stat(p); err == nil {
-			return Defaults(), nil // TODO parse
+	if chosen == "" { // no file found
+		return defaults, errors.New("no config file found; using defaults")
+	}
+	data, err := os.ReadFile(chosen)
+	if err != nil {
+		return defaults, fmt.Errorf("read config: %w", err)
+	}
+	md, err := toml.Decode(string(data), defaults) // decode overlays onto defaults
+	if err != nil {
+		return defaults, fmt.Errorf("parse config: %w", err)
+	}
+	// Capture module order from metadata keys: modules.<name>
+	seen := map[string]struct{}{}
+	for _, k := range md.Keys() {
+		if len(k) == 2 && k[0] == "modules" {
+			name := k[1]
+			if _, ok := seen[name]; !ok {
+				defaults.moduleOrder = append(defaults.moduleOrder, name)
+				seen[name] = struct{}{}
+			}
 		}
 	}
-	return Defaults(), errors.New("no config found; using defaults")
+	defaults.normalize()
+	return defaults, nil
 }
 
 func searchPaths() []string {
@@ -78,4 +107,66 @@ func searchPaths() []string {
 		out = append(out, filepath.Join(home, ".config", "swaystats", "config.toml"))
 	}
 	return out
+}
+
+// normalize clamps and validates config values after decoding.
+func (c *Config) normalize() {
+	c.normalizeTick()
+	c.normalizeCPU()
+	c.normalizeMem()
+}
+
+// ModuleOrder returns a copy of the module order slice (may be empty).
+func (c *Config) ModuleOrder() []string {
+	if len(c.moduleOrder) == 0 {
+		return nil
+	}
+	out := make([]string, len(c.moduleOrder))
+	copy(out, c.moduleOrder)
+	return out
+}
+
+func (c *Config) normalizeTick() {
+	c.TickHz = clampInt(c.TickHz, 1, 20, 1)
+}
+
+func (c *Config) normalizeCPU() {
+	if c.Modules.CPU.IntervalSec <= 0 {
+		c.Modules.CPU.IntervalSec = 2
+	}
+	c.Modules.CPU.Precision = clampInt(c.Modules.CPU.Precision, 0, 1, 0)
+}
+
+func (c *Config) normalizeMem() {
+	if c.Modules.Mem.IntervalSec <= 0 {
+		c.Modules.Mem.IntervalSec = 5
+	}
+	c.Modules.Mem.Precision = clampInt(c.Modules.Mem.Precision, 0, 1, 0)
+	if c.Modules.Mem.Format == "" {
+		c.Modules.Mem.Format = "percent"
+	}
+	if !validMemFormat(c.Modules.Mem.Format) {
+		c.Modules.Mem.Format = "percent"
+	}
+}
+
+func clampInt(val, min, max, fallback int) int {
+	if val == 0 && fallback != 0 { // allow zero to trigger fallback when min>0
+		val = fallback
+	}
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
+
+func validMemFormat(f string) bool {
+	switch f {
+	case "percent", "available", "used":
+		return true
+	}
+	return false
 }

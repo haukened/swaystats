@@ -3,7 +3,7 @@
 Minimal, resilient status line generator for sway/i3 (i3bar protocol v1). Outputs JSON on stdout; reads click events on stdin.
 
 ## Status
-Early scaffold: time block only, provider architecture in place, config defaults in code, no external deps. Colors only applied for error / abnormal states (future thresholds).
+Core providers implemented: time, CPU, memory. TOML config parsing implemented (BurntSushi/toml). Colors only applied for abnormal states (warn/danger thresholds).
 
 ## Build
 
@@ -33,21 +33,51 @@ Prints header then a forever-growing JSON array per i3bar spec:
 [, {"full_text":"2025-10-14 13:37:42"} ...
 ```
 
-## Config (planned)
+## Config
 Search order (first existing file wins):
 1. `$XDG_CONFIG_HOME/swaystats/config.toml`
-2. `$XDG_CONFIG_HOME/swaystats.toml`
-3. `~/.config/swaystats/config.toml`
-4. `~/.config/swaystats.toml`
+2. `~/.config/swaystats/config.toml`
 
-Currently: no file parsing yet; defaults are compiled in.
+If no file found, defaults are used and a note is logged to stderr.
 
-### Defaults
+Fields use snake_case in TOML. Unspecified values inherit defaults. Invalid or out-of-range values are clamped.
+
+### Module Ordering
+Provider output order is:
+1. The order you declare `[modules.<name>]` tables in the config file.
+2. Any remaining built-in modules you did not mention, in their internal registration order.
+
+This means adding a new module requires only dropping a table in your config (or accepting its default position). No numeric order keys needed.
+
+### Example `config.toml`
 ```
+# Global tick frequency (status emission alignment base). 1..20
 tick_hz = 1
-[blocks.time]
+
+[modules.time]
+enabled = true
 format = "2006-01-02 15:04:05"
+
+[modules.cpu]
+enabled = true
+interval_sec = 2
+warn_percent = 70
+danger_percent = 90
+precision = 0    # 0 or 1 decimal place
+prefix = "CPU "
+
+[modules.mem]
+enabled = true
+interval_sec = 5
+warn_percent = 70
+danger_percent = 90
+precision = 0
+prefix = "MEM "
+format = "percent" # percent|available|used
 ```
+
+### Defaults (effective)
+Same as the example above. Only include overrides you wish to change.
 
 ## Roadmap (short)
 - Parse TOML config (BurntSushi/toml).

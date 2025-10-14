@@ -2,6 +2,8 @@ package blocks
 
 import (
 	"time"
+
+	"swaystats/config"
 )
 
 // TimeProvider implements Provider for the clock.
@@ -18,6 +20,14 @@ func NewTimeProvider(interval time.Duration, format string) *TimeProvider {
 	tp.lastSec = now.Unix() - 1 // force first refresh
 	tp.MaybeRefresh(now.UnixNano())
 	return tp
+}
+
+func init() {
+	Register(ProviderSpec{
+		Name:   "time",
+		Enable: func(cfg *config.Config) bool { return cfg.Modules.Time.Enabled },
+		Build:  func(cfg *config.Config) Provider { return NewTimeProvider(time.Second, cfg.Modules.Time.Format) },
+	})
 }
 
 func (t *TimeProvider) Name() string { return "time" }

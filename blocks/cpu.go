@@ -66,6 +66,14 @@ func NewCpuProvider(cfg *config.Config) *CpuProvider {
 	return cp
 }
 
+func init() {
+	Register(ProviderSpec{
+		Name:   "cpu",
+		Enable: func(cfg *config.Config) bool { return cfg.Modules.CPU.Enabled },
+		Build:  func(cfg *config.Config) Provider { return NewCpuProvider(cfg) },
+	})
+}
+
 func (c *CpuProvider) Name() string { return "cpu" }
 
 func (c *CpuProvider) MaybeRefresh(now int64) bool {

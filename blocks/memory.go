@@ -70,6 +70,14 @@ func NewMemoryProvider(cfg *config.Config) *MemoryProvider {
 	return mp
 }
 
+func init() {
+	Register(ProviderSpec{
+		Name:   "mem",
+		Enable: func(cfg *config.Config) bool { return cfg.Modules.Mem.Enabled },
+		Build:  func(cfg *config.Config) Provider { return NewMemoryProvider(cfg) },
+	})
+}
+
 func (m *MemoryProvider) Name() string { return "mem" }
 
 func (m *MemoryProvider) MaybeRefresh(now int64) bool {
