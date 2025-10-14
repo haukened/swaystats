@@ -22,14 +22,14 @@ func main() {
 
 	// Providers (ordered). Time, CPU, Memory.
 	providers := []blocks.Provider{}
-	if cfg.Modules.Time.Enabled {
-		providers = append(providers, blocks.NewTimeProvider(time.Second, cfg.Modules.Time.Format))
-	}
 	if cfg.Modules.CPU.Enabled {
 		providers = append(providers, blocks.NewCpuProvider(cfg))
 	}
 	if cfg.Modules.Mem.Enabled {
 		providers = append(providers, blocks.NewMemoryProvider(cfg))
+	}
+	if cfg.Modules.Time.Enabled {
+		providers = append(providers, blocks.NewTimeProvider(time.Second, cfg.Modules.Time.Format))
 	}
 
 	// i3bar protocol header and opening array.
@@ -51,47 +51,52 @@ func main() {
 	// Initial alignment to next fractional interval boundary.
 	waitUntilNextTickInterval(interval, nil)
 
-	// firstRow tracks whether we've emitted the first data row after the initial empty array.
-	firstRow := true
+	// After emitting the initial empty array, every subsequent row must be comma-prefixed per i3bar protocol.
 	buf := bytes.NewBuffer(nil)
 	for {
-		// Service pending clicks quickly (non-blocking drain) before next tick alignment sleep.
-		for {
-			select {
-			case ev := <-clickCh:
-				handleClick(ev)
-			default:
-				goto render
-			}
-		}
-	render:
-		nowNs := time.Now().UnixNano()
-		changed := false
-		blocksOut := make([]blocks.Block, 0, len(providers))
-		for _, p := range providers {
-			if p.MaybeRefresh(nowNs) {
-				changed = true
-			}
-			blocksOut = append(blocksOut, p.Current())
-		}
-		if changed || len(blocksOut) > 0 {
-			buf.Reset()
-			enc := json.NewEncoder(buf)
-			if err := enc.Encode(blocksOut); err != nil {
-				log.Printf("encode blocks: %v", err)
-			} else {
-				outBytes := bytes.TrimRight(buf.Bytes(), "\n")
-				if firstRow {
-					firstRow = false
-				} else {
-					fmt.Print(",")
-				}
-				fmt.Println(string(outBytes))
-			}
-		}
+		drainClicks(clickCh)
+		renderOnce(buf, providers)
 		waitUntilNextTickInterval(interval, clickCh)
 	}
 }
+
+// drainClicks consumes all currently queued click events without blocking.
+func drainClicks(ch <-chan clicks.Click) {
+	for {
+		select {
+		case ev := <-ch:
+			handleClick(ev)
+		default:
+			return
+		}
+	}
+}
+
+// renderOnce refreshes providers (if due) and emits a JSON row.
+func renderOnce(buf *bytes.Buffer, providers []blocks.Provider) {
+	nowNs := time.Now().UnixNano()
+	changed := false
+	blocksOut := make([]blocks.Block, 0, len(providers))
+	for _, p := range providers {
+		if p.MaybeRefresh(nowNs) {
+			changed = true
+		}
+		blocksOut = append(blocksOut, p.Current())
+	}
+	if !changed && len(blocksOut) == 0 {
+		return
+	}
+	buf.Reset()
+	enc := json.NewEncoder(buf)
+	if err := enc.Encode(blocksOut); err != nil {
+		log.Printf("encode blocks: %v", err)
+		return
+	}
+	outBytes := bytes.TrimRight(buf.Bytes(), "\n")
+	fmt.Print(",")
+	fmt.Println(string(outBytes))
+}
+
 func handleClick(c clicks.Click) {
 	// Placeholder: just log; future mapping to commands.
 	log.Printf("click: %+v", c)
